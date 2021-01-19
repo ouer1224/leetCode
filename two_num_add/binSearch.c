@@ -191,8 +191,6 @@ int* twoSum(int* nums, int numsSize, int target, int* returnSize)
 		printf("%d ",nums[i]);
 	}
 	
-
-	
 	*returnSize=2;
 	for(;left<right;)
 	{
@@ -216,7 +214,7 @@ int* twoSum(int* nums, int numsSize, int target, int* returnSize)
 	}
 
 	printf("left=%d right=%d\n",left,right);
-	
+	*returnSize=0;
 	return NULL;
 }
 

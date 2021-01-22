@@ -18,7 +18,60 @@
 
 #define msgout(a)	puts(a);
 
-int f[7][4];
+
+#define head_oneSet		0x80000000
+#define tail_oneSet		0x7fffffff
+
+#define init_array(array)	do{array[0]=0;array[1]=tail_oneSet;}while(0)
+
+/*----------------------
+规则:
+数据的有效数据个数:[0]
+array的结束:tail_oneSet
+
+-----------------------*/
+int f[8][48];
+
+int array_append(int *dest,int *source)
+{
+	int tail_dest=0;
+	int tail_source=0;
+	
+	tail_dest=dest[0]+1;
+	
+
+	source++;
+	while(*source!=tail_oneSet)
+	{	
+		dest[tail_dest]=*source;
+		
+		tail_dest++;
+		source++;
+	}
+	
+	
+	dest[tail_dest]=tail_oneSet;
+	dest[0]=tail_dest-1;
+	
+	return tail_dest;
+}
+int array_addVal(int *dest,int val)
+{
+	int tail_dest=0;
+	
+	tail_dest=dest[0]+1;
+	dest[tail_dest]=val;
+
+	dest[tail_dest+1]=tail_oneSet;
+	dest[0]++;
+	
+	return dest[0];	
+}
+
+
+
+
+
 
 
 int getFN(int *buf,int len,int tar,int delta)
@@ -36,7 +89,7 @@ int getFN(int *buf,int len,int tar,int delta)
 			break;
 		}
 		//f[val_1st+1]=f[buf[j]]+f[val_1st+1-buf[j]];
-		if(f[val_1st+delta-buf[j]][0]==-1)
+		if(f[val_1st+delta-buf[j]][0]==0)
 		{
 			break;
 		}
@@ -44,27 +97,20 @@ int getFN(int *buf,int len,int tar,int delta)
 		{
 			dest=f[val_1st+delta];
 			source=f[buf[j]];
-			while(*source!=-1)
-			{
-				*dest=*source;
-				//printf("%d\n",*source);
-				source++;
-				dest++;
-			}
+			
+			array_append(dest,source);
+			
 			source=f[val_1st+delta-buf[j]];
-			while(*source!=-1)
-			{
-				*dest=*source;
-				//printf("%d\n",*source);
-				source++;
-				dest++;
-			}
+			
+			array_append(dest,source);
+			
+	
 			break;
 		}
 	}
 	
 	printf("f[%d][0]=%d\n",val_1st+delta,f[val_1st+delta][0]);
-	loopAll(f[val_1st+delta][i],i,4);	
+	loopAll(f[val_1st+delta][i],i,f[val_1st+delta][0]+1);	
 	puts("\n");	
 	return 1;
 }
@@ -86,21 +132,23 @@ void combinationSum(int *buf,int len,int tar)
 	
 	pr=(void *)f;
 	
-	for(i=0;i<4*7;i++)
+	for(i=0;i<7;i++)
 	{
-		pr[i]=-1;
+		init_array(f[i]);
 	}
-	
-	f[0][0]=0;
-	
+	msgout("step1");
+	array_addVal(f[0],0);
+	msgout("step2");
 	for(i=0;i<len;i++)//将f2,f3,f6,f7设置为其自身数值.正确其至少有一种实现的方式.其他数值暂时设置为-1.需要后续的计算
 	{
 		val=buf[i];
-		f[val][0]=val;
+		printf("step3=%d\n",val);
+		array_addVal(f[val],val);
+		msgout("step3_end");
 	}
-	
+	msgout("step4");
 	printf("nums=%d\n",nums);
-	loopOut(f[i][0],i,nums);
+	loopOut(f[i][1],i,f[i][0]);
 
 #if 1	//使用迭代方式
 	for(i=1;i<=tar-val_1st;i++)

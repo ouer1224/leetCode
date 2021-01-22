@@ -52,14 +52,27 @@ int twoSumClosest(int* nums, int numsSize, int target)
 	}
 	return 1;
 }
+#define swap(a,b)	do{a=a^b;b=a^b;a=a^b;}while(0)
 
 int threeSumClosest(int* nums, int numsSize, int target)
 {
 	int i=0;
 	int val=0;//nums[0]+nums[1]+nums[2];
 	int rt=0;
+	int j=0;
+	//qsort(nums,numsSize,sizeof(int),cmpfunc);
+	for(i=0;i<numsSize;i++)
+	{
+		for(j=1;j<numsSize-i;j++)
+		{
+			if(nums[j-1]>nums[j])
+			{
+				swap(nums[j-1],nums[j]);
+			}
+		}
+	}
+	
 
-	qsort(nums,numsSize,sizeof(int),cmpfunc);
 	
 	val=nums[0]+nums[1]+nums[2];
 	

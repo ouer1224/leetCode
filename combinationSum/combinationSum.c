@@ -105,7 +105,7 @@ int getFN(int *buf,int len,int tar,int delta)
 			array_append(dest,source);
 			
 	
-			break;
+			//break;
 		}
 	}
 	

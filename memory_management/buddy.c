@@ -3,7 +3,11 @@
 后续想办法使用其他的方式.
 或者:
 是否可以直接开辟出足够的变量buf,然后供init和malloc使用.还得方便free函数中对变量空间的释放.
-
+*/
+/*
+2021年2月20日 15时14分
+现在编写完了int部分.
+后面编写malloc的部分
 */
 
 
@@ -68,7 +72,7 @@ void * bmalloc(uint32_t size)
 		{
 			break;
 		}
-		pr_list=container_of(pr_list->link.next,struct __list_buddy,link);
+		pr_list=getNextBuddy(pr_list);
 	}
 	while(pr_list!=s_phead_buddy);
 	
@@ -275,6 +279,7 @@ struct __list_buddy * binit_mem(uint8_t *pr,uint32_t len)
 	
 	}
 
+	s_phead_buddy=head_list;
 
 	return head_list;
 }

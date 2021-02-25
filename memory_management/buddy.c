@@ -9,6 +9,10 @@
 现在编写完了int部分.
 后面编写malloc的部分
 */
+/*
+time:2021-02-25   14:25:44
+将链表都添加一个空数据的锚点. 
+*/
 
 
 #include "stdio.h"
@@ -41,6 +45,7 @@ struct __list_buddy
 
 #define MEM_FREEING		0
 #define MEM_MALLOCED	1
+#define ANCHOR			0xff
 
 #define MAX_MEM_UNIOT_BUDDY		1024
 
@@ -144,6 +149,7 @@ struct __list_buddy * binit_mem(uint8_t *pr,uint32_t len)
 	struct __list_buddy *head_list=NULL;
 	struct __list_buddy *tail_list=NULL;
 	struct __list_buddy_unit *pr_unit=NULL;
+	struct __list_buddy_unit *anchor_unit=NULL; 
 	/*
 采用新的分配策略,如下:
 根据当前的len,求出最大的(2的n幂-1),其对应的是二进制的1111这样的数值.
@@ -187,14 +193,19 @@ struct __list_buddy * binit_mem(uint8_t *pr,uint32_t len)
 	printf("all = %d \n",i);
 	head_list=malloc(i*SizeBuddy); 
 
+	anchor_unit=malloc(SizeBuddyUnit);
+	anchor_unit->state=ANCHOR;
+	anchor_unit->pr_mem=NULL;
+	init_link_list(&(anchor_unit->link));
+	head_list[0].Npower=1;
+	head_list[0].pr_list_buddy=anchor_unit;
+	init_link_list(&(head_list[0].link));
+	
 	pr_unit=malloc(SizeBuddyUnit);
 	pr_unit->state=MEM_FREEING;
 	pr_unit->pr_mem=pr_start+0;
-	init_link_list(&(pr_unit->link));
+	list_add_before(&(pr_unit->link),&(head_list[0].pr_list_buddy->link));
 
-	head_list[0].Npower=1;
-	head_list[0].pr_list_buddy=pr_unit;
-	init_link_list(&(head_list[0].link));	
 	
 	pr_unit=malloc(SizeBuddyUnit);
 	pr_unit->state=MEM_FREEING;
@@ -203,15 +214,19 @@ struct __list_buddy * binit_mem(uint8_t *pr,uint32_t len)
 	
 	for(npow=1;npow<i;npow++)
 	{
-		pr_unit=malloc(SizeBuddyUnit);
+		anchor_unit=malloc(SizeBuddyUnit);/*初始化锚点*/
+		anchor_unit->state=ANCHOR;
+		anchor_unit->pr_mem=NULL;
+		init_link_list(&(anchor_unit->link));
 
-		head_list[npow].Npower=head_list[npow-1].Npower*2;
-		head_list[npow].pr_list_buddy=pr_unit;
+		head_list[npow].Npower=head_list[npow-1].Npower*2;/*初始化垂直链表*/ 
+		head_list[npow].pr_list_buddy=anchor_unit;
 		list_add_before(&(head_list[npow].link),&(head_list[0].link));	
 		
+		pr_unit=malloc(SizeBuddyUnit);/*将内存块依次与锚点挂钩起来*/
 		pr_unit->state=MEM_FREEING;
 		pr_unit->pr_mem=pr_start+head_list[npow].Npower;
-		init_link_list(&(pr_unit->link));
+		list_add_before(&(pr_unit->link),&(head_list[npow].pr_list_buddy->link));
 	}
 	
 	/*将 [ pr, pr_start )的内存,左闭右开 ,添加到链表中*/ 
@@ -294,18 +309,19 @@ int main(void)
 	struct __list_buddy *pr_head=NULL;
 	struct __list_buddy *pr_list=NULL;
 	struct __list_buddy_unit *pr_unit=NULL;
-	struct __list_buddy_unit *head_unit=NULL;
+	struct __list_buddy_unit *anchor_unit=NULL;
 	pr_head=binit_mem(s_mbuf,sizeof(s_mbuf));
 	
 	for(i=0;i<10;i++)
 	{
-		head_unit=pr_head[i].pr_list_buddy;
-		pr_unit=head_unit;
-		do
+		anchor_unit=pr_head[i].pr_list_buddy;
+		pr_unit=getNextBuddyUnit(anchor_unit);
+
+		while(pr_unit!=anchor_unit)
 		{
 			printf("%d-npow=%d pr_mem=%p\n",i,pr_head[i].Npower,pr_unit->pr_mem);
 			pr_unit=getNextBuddyUnit(pr_unit);
-		}while(pr_unit!=head_unit);
+		}
 	}
 	
 	return 0;

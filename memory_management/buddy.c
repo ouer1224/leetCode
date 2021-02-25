@@ -53,6 +53,13 @@ struct __list_buddy
 struct __list_buddy *s_phead_buddy=NULL;
 
 
+#define __getMemFromPr(pr,size)    ((1:(pr=pr+size)*0:0)?0:pr-size)       //由于__1st_kmalloc返回0,因此必定返回pr-size.
+
+#define prToUint32(pr)		((uint32_t)(pr))
+#define SizeBuddy			sizeof(struct __list_buddy)
+#define SizeBuddyUnit		sizeof(struct __list_buddy_unit)
+
+
 #define getNextBuddy(pr_list)		container_of((pr_list->link.next),struct __list_buddy,link);
 #define getNextBuddyUnit(pr_list)		container_of((pr_list->link.next),struct __list_buddy_unit,link);
 
@@ -62,27 +69,82 @@ struct __list_buddy *s_phead_buddy=NULL;
 *name    :
 *var     :
 *return  :
+*attention:水平的链表是有锚点的,锚点不携带任何数据,仅做链接和定位 
+:在init时,最小内存为1.后续的malloc和free的最小内存也是1.
+todo:后续修改为2的m幂 
 ************************************************/
 
 void * bmalloc(uint32_t size)
 {
 	void *pr=NULL;
 	struct __list_buddy *pr_list=NULL;
+	struct __list_buddy_unit *anchor_unit=NULL;
+	struct __list_buddy_unit *pr_unit=NULL;
+	uint32_t mem_remain=0;
 	
 	printf("ram_size=%d\n",size);
 	pr_list=s_phead_buddy;
 	do
 	{
-		if(pr_list->Npower>=size)
+		if(pr_list->Npower>=size)/*获取到合适的内存的垂直链表*/
 		{
-			break;
+			mem_remain=pr_list->Npower;
+			anchor_unit=pr_list->pr_list_buddy;
+			pr_unit=getNextBuddyUnit(anchor_unit);	
+			if(pr_unit==anchor_unit)
+			{
+				pr=NULL;
+			}
+			else
+			{
+				pr=pr_unit->pr_mem;
+				list_del(&(pr_unit->link));
+				free(pr_unit);
+				break;
+			}
+
 		}
 		pr_list=getNextBuddy(pr_list);
 	}
 	while(pr_list!=s_phead_buddy);
-	
+	if(pr_list==s_phead_buddy)
+	{
+		if(pr_list->Npower<size) //except 
+		{
+			return NULL;	
+		}
+	}	
 	printf("satisfy_N=%d\n",pr_list->Npower);
 	
+	/*将剩余的内存空间挂载到垂直链表中*/
+	/*由于剩余空间的顶是按照地址对齐的,因此剩余的空间可以按照二进制直接映射到垂直链表中*/
+	mem_remain-=size;
+	pr_list=s_phead_buddy;
+	while(mem_remain>0)
+	{
+		if((mem_remain&0x01)==1)
+		{
+			pr_unit=malloc(SizeBuddyUnit);
+			pr_unit->state=MEM_FREEING;
+			pr_unit->pr_mem=pr+size;
+			list_add_before(&(pr_unit->link),&(pr_list->pr_list_buddy->link));
+			size+=pr_list->Npower;
+		}
+		else
+		{
+		
+		}
+	
+		mem_remain=mem_remain>>1;
+		pr_list=getNextBuddy(pr_list);
+		if(pr_list==s_phead_buddy)	//todo:不太可能出现这样的情况,但是出现时,表示出现err了 
+		{
+			break;
+		}
+	}
+	
+
+		
 	return pr;
 }
 /***********************************************
@@ -130,11 +192,7 @@ uint32_t getExp2(uint32_t val)
 			部分变量直接使用pr开头的内存空间.后续的空间才分配给user使用.
 ************************************************/
 
-#define __getMemFromPr(pr,size)    ((1:(pr=pr+size)*0:0)?0:pr-size)       //由于__1st_kmalloc返回0,因此必定返回pr-size.
 
-#define prToUint32(pr)		((uint32_t)(pr))
-#define SizeBuddy			sizeof(struct __list_buddy)
-#define SizeBuddyUnit		sizeof(struct __list_buddy_unit)
 
 struct __list_buddy * binit_mem(uint8_t *pr,uint32_t len)
 {
@@ -299,8 +357,29 @@ struct __list_buddy * binit_mem(uint8_t *pr,uint32_t len)
 	return head_list;
 }
 
+void show_mem(struct __list_buddy * pr_head)
+{
+	uint32_t i=0;
+	uint32_t j=0;
+	struct __list_buddy *pr_list=NULL;
+	struct __list_buddy_unit *pr_unit=NULL;
+	struct __list_buddy_unit *anchor_unit=NULL;
 
+	for(i=0;i<10;i++)
+	{
+		anchor_unit=pr_head[i].pr_list_buddy;
+		pr_unit=getNextBuddyUnit(anchor_unit);
+		j=0;
+		while(pr_unit!=anchor_unit)
+		{
+			j++;
+			printf("%d-npow=%d pr_mem=%p \n",i,pr_head[i].Npower,pr_unit->pr_mem);
+			pr_unit=getNextBuddyUnit(pr_unit);
+		}
+		printf("				--%d pow==%d count\n",pr_head[i].Npower,j);
+	}
 
+}
 
 static char s_mbuf[1023];
 int main(void)
@@ -310,19 +389,20 @@ int main(void)
 	struct __list_buddy *pr_list=NULL;
 	struct __list_buddy_unit *pr_unit=NULL;
 	struct __list_buddy_unit *anchor_unit=NULL;
+	void *pr=NULL;
 	pr_head=binit_mem(s_mbuf,sizeof(s_mbuf));
 	
+	printf("\n--------------0 st-------------------\n");
+	show_mem(pr_head);
 	for(i=0;i<10;i++)
 	{
-		anchor_unit=pr_head[i].pr_list_buddy;
-		pr_unit=getNextBuddyUnit(anchor_unit);
-
-		while(pr_unit!=anchor_unit)
-		{
-			printf("%d-npow=%d pr_mem=%p\n",i,pr_head[i].Npower,pr_unit->pr_mem);
-			pr_unit=getNextBuddyUnit(pr_unit);
-		}
+		pr=bmalloc(3);
+		printf("malloc_mem=%p\n",pr);
+		printf("\n--------------%d-------------------\n",i+1);
+		show_mem(pr_head);
 	}
+	
+	
 	
 	return 0;
 }

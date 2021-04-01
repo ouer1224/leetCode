@@ -147,15 +147,63 @@ void * bmalloc(uint32_t size)
 		
 	return pr;
 }
+
+/***********************************************
+*fun    :判断两个n的内存块是否可以合并了2n的大内存块 
+*name   :
+*var    :
+*return :
+************************************************/ 
+void * incorporate_mem(void *prx,void *pry,uint32_t size)
+{
+	uint32_t tmp=0;
+	
+	tmp=prToUint32(prx)-prToUint32(pry);
+	if(tmp>0)
+	{
+	
+	}
+	else
+	{
+		tmp=0-tmp;
+		swap(prx,pry);	/*确保x大于y*/
+	}
+	if(tmp!=size)
+	{
+		goto err_exit;
+	}
+	if((prx%(2*size))!=0)	/*对于2n空间,其地址不对齐*/
+	{
+		goto err_exit;	
+	}
+	
+ok_exit:	
+	return prx;	
+
+err_exit:
+	return NULL;
+
+}
+
 /***********************************************
 *fun     :释放buddy的内存块
 *name    :
 *var     :
 *return  :
+todo:合并时,是否需要关注地址对齐?? 
 ************************************************/
 
-int bfree(void)
+int bfree(void *pr)
 {
+
+	/*释放pr时,将pr挂载到垂直链表中的正确节点中,就能找到所有与pr相同size大小的free内存块,然后bin排序
+	排序后,再使用一层循环,查找是否能合并的内存块*/	
+	//双向链表的排序更方便,可以删除节点后,直接插入合适位置即可.
+		 
+
+
+	/*存在能合并的内存块后,再去找与其相同size大小的内存块,然后重复上面的操作*/ 
+
 
 	return NULL;
 }

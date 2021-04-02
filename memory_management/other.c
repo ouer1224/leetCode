@@ -274,7 +274,8 @@ uint32_t init_mem(uint8_t *mempool,uint32_t size)
 
 
 /*获取size大小的内存*/
-//!size必定是min_block_size倍数,如果不满足,就在函数内部处理为倍数关系.
+//!size必定是min_block_size倍数,如果不满足,就在函数内部处理为倍数关系.\
+//!在获取size时,推荐额外获取16个char空间.
 void * os_malloc(uint32_t size)
 {
 	void *pr=NULL;
@@ -298,7 +299,7 @@ printf("m0\n");
 			if(_size>=size)
 			{
 				popListFromHeader(prH,prV);
-				pr=(void *)prH+sizeof(struct VmemCB);
+				pr=(void *)prH+sizeof(struct memCB);
 				break;
 			}
 
@@ -337,6 +338,7 @@ printf("m0\n");
 			prH->size=prV->mulriple*min_block_size;
 			prH->pre=NULL;
 			prH->next=NULL;
+
 			pushListToHeader(prH,prV);
 			printf("push mem ok-size=%d addr=%p\n",prH->size,prH);
 
@@ -349,6 +351,211 @@ printf("m0\n");
 
 	return pr;
 }
+
+//求绝对值
+#define abs(a)	((a)>0?(a):-(a))
+//获取两个地址之间的差值
+#define __diff_address(a,b)	((uint32_t)(a)-(uint32_t)(b))
+#define diff_address(a,b)	(abs(__diff_address(a,b)))
+/***********************************************
+ *fun     :尝试对新free的内存进行合并,合并成功后,返回合并后的内存块,并将被合并的内存块pop掉,如果合并失败,返回NULL
+ *name    :
+ *var     :
+ *return  :
+ ************************************************/
+struct memCB * try_memory_merge(struct VmemCB *prV,struct memCB *prFree)
+{
+	struct memCB *pr=NULL;
+	uint32_t size=0;
+	struct memCB *prMove=NULL;
+	struct memCB *pr_p=NULL, *pr_n=NULL;
+	uint32_t tmp=0;
+
+	printf("merge in\n");
+
+	size=prV->mulriple*min_block_size;
+	prMove=prV->Hmem;
+
+	
+	//!当需要合并的size就是允许的最大size时,直接退出,不合并
+	if(prFree->size>=min_block_size*(0x01<<(max_level_vmem-1)))
+	{
+		return NULL;
+	}
+
+	printf("merge 0\n");
+
+	while(prMove!=NULL)
+	{
+		tmp=diff_address(prFree,prMove);
+		printf("diff=%d prMove=%p ,prFree=%p\n",tmp,prMove,prFree);
+		if(tmp==size)
+		{	
+			//将prMove从链表中删除
+			//尝试寻找循环不变式
+			if((prMove->next!=NULL)&&(prMove->pre!=NULL))
+			{
+				prMove->pre->next=prMove->next;
+				prMove->next->pre=prMove->pre;
+			}
+			else
+			{
+				if(prMove->pre==NULL)
+				{
+					prMove->next->pre=NULL;
+					prV->Hmem=prMove->next;
+				}
+				else
+				{
+					prMove->pre=NULL;
+				}
+			}
+
+
+			if((uint32_t)prFree>(uint32_t)prMove)
+			{
+				pr=prMove;
+			}
+			else
+			{
+				pr=prFree;
+			}
+			
+			pr->size=size*2;
+			pr->pre=NULL;
+			pr->next=NULL;
+
+			break; 
+		}
+
+		prMove=prMove->next;
+	}
+
+	printf("merge_pr=%p\n",pr);
+
+	printf("merge end\n");
+
+	return pr;
+
+}
+
+/***********************************************
+ *fun     :将pr指向的内存释放到Vlist对应的Hlist中,并且进行内存合并
+ *name    :
+ *var     :
+ *return  :
+ ************************************************/
+//!释放pr的内存时,需要根据pr-sizeof(struct VmemCB)内存储的信息进行释放
+//!内存块释放后,要进行内存的合并,合并策略如下:
+//todo:再释放到Hlist后,检查本Hlist是否能合并.如果能,则合并后挂载到其他Hlist.然后循环次过程
+//!考虑,合并时是向上合并,还是向下合并,或者是通过计算.--似乎没有任何方式能避免内存碎片的产生!!!.
+//todo:free的时候,内存块可能不是2的幂,需要按照其二进制拆分成2的幂.然后每一位都判断是否需要合并--
+//?后期思考是否有更合理的逻辑.
+
+//!规定,在__os_free函数中需要释放的内存块必定是2的幂*min_block.
+uint32_t __os_free(void *pr)
+{
+	uint32_t i =0;
+	uint32_t size=0;
+	struct memCB *prH=NULL;
+	struct VmemCB *prV=NULL;
+	struct memCB *prHMerged=NULL;
+
+	
+	(uint8_t *)prH=(uint8_t *)pr-sizeof(struct memCB);
+	size=prH->size;
+	size=size/min_block_size;
+	
+	printf("!!!!__os_size=%d\n",size);
+	
+	prV=s_list_vmem;
+
+	while((prV!=NULL)&&(size!=0))
+	{
+		printf("cur_mul=%d\n",prV->mulriple);
+		if(size==prV->mulriple)
+		{
+			prH->pre=NULL;
+			prH->next=NULL;
+
+			printf("try 0\n");
+			prHMerged=try_memory_merge(prV,prH);
+			printf("try end\n");
+			if(prHMerged==NULL)
+			{
+				printf("push 0\n");
+				printf("size=%d  mulriple=%d\n",size,prV->mulriple);
+				pushListToHeader(prH,prV);
+				printf("push end\n");
+				break;
+			}
+			else	//继续判断是否能合并
+			{
+				prH=prHMerged;
+				size=prH->size;
+				size/=min_block_size;
+			}
+			
+		}	
+
+		prV=prV->next;	
+	}
+
+	return fun_ok;
+}
+
+uint32_t os_free(void *pr)
+{
+
+	uint32_t i =0;
+	uint32_t size=0;
+	struct memCB *prH=NULL,*prHTmp=NULL;
+	struct VmemCB *prV=NULL;
+	struct memCB *prHMerged=NULL;
+
+	
+	(uint8_t *)prH=(uint8_t *)pr-sizeof(struct memCB);
+	size=prH->size;
+
+	printf("##size=%d\n",size); 	
+
+	size=size/min_block_size;
+	
+	
+
+	prV=s_list_vmem;
+
+	while((prV!=NULL)&&(size!=0))
+	{
+
+		if((size&0x01)==1)
+		{
+
+			prHTmp=prH;
+			
+			prHTmp->pre=NULL;
+			prHTmp->next=NULL;
+			prHTmp->size=min_block_size*(prV->mulriple);
+			printf("tmp_size=%d\n",prHTmp->size);
+			__os_free((uint8_t *)prHTmp+sizeof(struct memCB));
+			printf("__os_end\n");
+			(uint32_t)prH=(uint32_t)prH+prHTmp->size;
+		}
+
+		size=size>>1;
+		prV=prV->next;
+	}
+
+
+	return fun_ok;
+}
+
+
+
+
+
+
+
 
 uint8_t readMemMap(void)
 {
@@ -382,39 +589,32 @@ uint8_t s_mempool[SIZE_MEM_POOLE];
 int main(void)
 {
 	int i=0;
+	uint8_t *mem[16];
 	struct VmemCB *pr=NULL;
 	struct memCB *pr_H=NULL;
 	printf("s0\n");
 	
 	init_mem(s_mempool,SIZE_MEM_POOLE);
 
+	for(i=0;i<2;i++)
+	{
+		readMemMap();
+		printf("--mem=%p\n",mem[i]=os_malloc(300));
+	}
+	
+	for(i=0;i<1;i++)
+	{
+		readMemMap();
+		printf("free %d \n",i);
+		printf("--state=%d\n",os_free(mem[i]));
+	}
 	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();	
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();	
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();
-	printf("--mem=%p\n",os_malloc(300));
-	readMemMap();	
+	
+	
+	
+	
+	
+		
 				
 	return fun_err;
 }

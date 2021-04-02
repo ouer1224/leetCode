@@ -103,6 +103,28 @@ struct VmemCB *s_pr_list_vmem=s_list_vmem;
 }while(0);
 
 
+uint8_t readMemMap(void)
+{
+	int i=0;
+	struct VmemCB *pr=NULL;
+	struct memCB *pr_H=NULL;
+
+	pr=s_list_vmem;
+	i=0;
+	while(pr!=NULL)
+	{
+		
+		pr_H=pr->Hmem;
+		while(pr_H!=NULL)
+		{
+			printf("i=%d mul=%d  size=%d add=%p\n",i,pr->mulriple,pr_H->size,pr_H);
+			pr_H=pr_H->next;
+		}
+		i++;
+		pr=pr->next;
+	}
+	return 1;
+}
 
 
 uint32_t init_mem(uint8_t *mempool,uint32_t size)
@@ -278,7 +300,7 @@ uint32_t init_mem(uint8_t *mempool,uint32_t size)
 //!在获取size时,推荐额外获取16个char空间.
 void * os_malloc(uint32_t size)
 {
-	void *pr=NULL;
+	struct memCB  *pr=NULL;
 	uint32_t _size=0;
 	uint32_t leftsize=0;
 	uint32_t i=0;
@@ -299,7 +321,7 @@ printf("m0\n");
 			if(_size>=size)
 			{
 				popListFromHeader(prH,prV);
-				pr=(void *)prH+sizeof(struct memCB);
+				pr=prH;
 				break;
 			}
 
@@ -349,14 +371,21 @@ printf("m0\n");
 		prV=prV->next;
 	}
 
-	return pr;
+	if(pr!=NULL)
+	{
+		pr->size=size;
+		pr->pre=NULL;
+		pr->next=NULL;
+	}
+
+	return  (void *)((uint32_t)pr+sizeof(struct memCB));
 }
 
 //求绝对值
-#define abs(a)	((a)>0?(a):-(a))
+#define abs(a)	((a)>0?(a):(0-(a)))
 //获取两个地址之间的差值
 #define __diff_address(a,b)	((uint32_t)(a)-(uint32_t)(b))
-#define diff_address(a,b)	(abs(__diff_address(a,b)))
+#define diff_address(a,b)	(((uint32_t)(a)>=(uint32_t)(b))?((uint32_t)(a)-(uint32_t)(b)):((uint32_t)(b)-(uint32_t)(a)))
 /***********************************************
  *fun     :尝试对新free的内存进行合并,合并成功后,返回合并后的内存块,并将被合并的内存块pop掉,如果合并失败,返回NULL
  *name    :
@@ -466,7 +495,7 @@ uint32_t __os_free(void *pr)
 	size=prH->size;
 	size=size/min_block_size;
 	
-	printf("!!!!__os_size=%d\n",size);
+	printf("##########!!!!__os_size=%d\n",size);
 	
 	prV=s_list_vmem;
 
@@ -478,13 +507,13 @@ uint32_t __os_free(void *pr)
 			prH->pre=NULL;
 			prH->next=NULL;
 
-			printf("try 0\n");
+			printf("~~~~try --size=%d\n",prH->size);
 			prHMerged=try_memory_merge(prV,prH);
-			printf("try end\n");
+			printf("try end = %p-----------\n",prHMerged);
 			if(prHMerged==NULL)
 			{
 				printf("push 0\n");
-				printf("size=%d  mulriple=%d\n",size,prV->mulriple);
+				printf("~~~~size=%d  mulriple=%d\n",size,prV->mulriple);
 				pushListToHeader(prH,prV);
 				printf("push end\n");
 				break;
@@ -538,6 +567,8 @@ uint32_t os_free(void *pr)
 			prHTmp->size=min_block_size*(prV->mulriple);
 			printf("tmp_size=%d\n",prHTmp->size);
 			__os_free((uint8_t *)prHTmp+sizeof(struct memCB));
+			
+			readMemMap();
 			printf("__os_end\n");
 			(uint32_t)prH=(uint32_t)prH+prHTmp->size;
 		}
@@ -557,28 +588,6 @@ uint32_t os_free(void *pr)
 
 
 
-uint8_t readMemMap(void)
-{
-	int i=0;
-	struct VmemCB *pr=NULL;
-	struct memCB *pr_H=NULL;
-
-	pr=s_list_vmem;
-	i=0;
-	while(pr!=NULL)
-	{
-		
-		pr_H=pr->Hmem;
-		while(pr_H!=NULL)
-		{
-			printf("i=%d mul=%d  size=%d add=%p\n",i,pr->mulriple,pr_H->size,pr_H);
-			pr_H=pr_H->next;
-		}
-		i++;
-		pr=pr->next;
-	}
-	return 1;
-}
 
 
 
@@ -589,7 +598,7 @@ uint8_t s_mempool[SIZE_MEM_POOLE];
 int main(void)
 {
 	int i=0;
-	uint8_t *mem[16];
+	struct memCB *mem[16];
 	struct VmemCB *pr=NULL;
 	struct memCB *pr_H=NULL;
 	printf("s0\n");
@@ -598,14 +607,14 @@ int main(void)
 
 	for(i=0;i<2;i++)
 	{
-		readMemMap();
+		//readMemMap();
 		printf("--mem=%p\n",mem[i]=os_malloc(300));
 	}
 	
-	for(i=0;i<1;i++)
+	for(i=0;i<2;i++)
 	{
 		readMemMap();
-		printf("free %d \n",i);
+		printf("\n\n++++++++++++++++++++ree %d\n",i);
 		printf("--state=%d\n",os_free(mem[i]));
 	}
 	readMemMap();

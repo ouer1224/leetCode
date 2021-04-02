@@ -11,6 +11,11 @@ typedef char int8_t;
 #define fun_err 	0xffffffff
 #define fun_none	0
 
+
+#define pradd(a,b)	(((uint32_t)(a)+(uint32_t)(b)))
+#define prsub(a,b)	((uint32_t)(a)-(uint32_t)(b))
+
+
 struct memCB
 {
 	uint32_t size;
@@ -25,14 +30,6 @@ struct memCB *s_pr_mem_list=NULL;
 
 struct memCB s_used_mem_header={0,NULL,NULL};
 struct memCB s_used_mem_tail;
-
-
-
-
-
-
-
-
 
 
 
@@ -80,6 +77,7 @@ struct VmemCB *s_pr_list_vmem=s_list_vmem;
 	}\
 	else\
 	{\
+	printf("----test--\n");\
 		pr_inser->pre=NULL;\
 		pr_inser->next=NULL;\
 		vlist->Hmem=pr_inser;\
@@ -400,7 +398,7 @@ struct memCB * try_memory_merge(struct VmemCB *prV,struct memCB *prFree)
 	struct memCB *pr_p=NULL, *pr_n=NULL;
 	uint32_t tmp=0;
 
-	printf("merge in\n");
+	printf("merge in prV=%p\n",prV);
 
 	size=prV->mulriple*min_block_size;
 	prMove=prV->Hmem;
@@ -422,10 +420,15 @@ struct memCB * try_memory_merge(struct VmemCB *prV,struct memCB *prFree)
 		{	
 			//将prMove从链表中删除
 			//尝试寻找循环不变式
+			printf("prMove=%p %p size=%d\n",prMove->pre,prMove->next,prMove->size);
 			if((prMove->next!=NULL)&&(prMove->pre!=NULL))
 			{
 				prMove->pre->next=prMove->next;
 				prMove->next->pre=prMove->pre;
+			}
+			else if((prMove->next==NULL)&&(prMove->pre==NULL))
+			{
+				prV->Hmem=NULL;
 			}
 			else
 			{
@@ -501,19 +504,21 @@ uint32_t __os_free(void *pr)
 
 	while((prV!=NULL)&&(size!=0))
 	{
-		printf("cur_mul=%d\n",prV->mulriple);
+		printf("cur_mul=%d ,tar=%d\n",prV->mulriple,size);
 		if(size==prV->mulriple)
 		{
 			prH->pre=NULL;
 			prH->next=NULL;
 
 			printf("~~~~try --size=%d\n",prH->size);
+			printf("cur_mul=%d\n",prV->mulriple);
 			prHMerged=try_memory_merge(prV,prH);
 			printf("try end = %p-----------\n",prHMerged);
 			if(prHMerged==NULL)
 			{
 				printf("push 0\n");
 				printf("~~~~size=%d  mulriple=%d\n",size,prV->mulriple);
+				readMemMap();
 				pushListToHeader(prH,prV);
 				printf("push end\n");
 				break;
@@ -560,7 +565,17 @@ uint32_t os_free(void *pr)
 		if((size&0x01)==1)
 		{
 
-			prHTmp=prH;
+			//prHTmp=prH;
+			//!free时,从高地址开始切割
+			if(prH->size>min_block_size*(prV->mulriple))
+			{
+				prHTmp=(void*)(pradd(prH,prH->size)-min_block_size*(prV->mulriple));
+				prH->size=prH->size-min_block_size*(prV->mulriple);//todo:此处有问题
+			}
+			else
+			{
+				prHTmp=prH;
+			}		
 			
 			prHTmp->pre=NULL;
 			prHTmp->next=NULL;
@@ -570,7 +585,8 @@ uint32_t os_free(void *pr)
 			
 			readMemMap();
 			printf("__os_end\n");
-			(uint32_t)prH=(uint32_t)prH+prHTmp->size;
+			//(uint32_t)prH=(uint32_t)prH+prHTmp->size;
+			
 		}
 
 		size=size>>1;
@@ -605,6 +621,8 @@ int main(void)
 	
 	init_mem(s_mempool,SIZE_MEM_POOLE);
 
+	readMemMap();
+
 	for(i=0;i<2;i++)
 	{
 		//readMemMap();
@@ -616,6 +634,8 @@ int main(void)
 		readMemMap();
 		printf("\n\n++++++++++++++++++++ree %d\n",i);
 		printf("--state=%d\n",os_free(mem[i]));
+		readMemMap();
+		printf("\n\n\n");
 	}
 	readMemMap();
 	

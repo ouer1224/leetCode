@@ -96,7 +96,7 @@ fun_glo uint32_t init_mem(void* pool,uint32_t size)
 	}
 
 	prmem=pool;
-	prmem->size=size;
+	prmem->size=size-sizeof(struct memCB);
 	prmem->xor=(void*)prxor(pr_header_noused,NULL);
 
 	s_header_noused.size=0;
@@ -152,9 +152,10 @@ fun_prv void * __os_malloc(uint32_t size)
 			}
 			else//!从高地址取block,提供给user
 			{
-				prmem=(void *)pradd(cur,leftsize);
+				prmem=(void *)pradd(cur,leftsize+sizeof(struct memCB));
+				printf("==pr=%p\n",prmem);
 				prmem=(void *)prsub(prmem,size+sizeof(struct memCB));
-
+				printf("==prmem=%p\n",prmem);
 				prmem->size=size;
 				prmem->xor=prmem;
 
@@ -185,6 +186,93 @@ fun_glo os_malloc(uint32_t size)
 }
 
 /***********************************************
+ *fun     :检查两个block的地址是否是连续的.
+ *name    :
+ *var     :
+ *return  :code_ok:连续,code_err:不连续.code_prnone:空指针
+ ************************************************/
+uint32_t check_block_consecutive(struct memCB *cur,struct memCB *tar)
+{
+	uint32_t sizea=0;
+	uint32_t sizeb=0;
+
+	if((cur==NULL)||(tar==NULL))
+	{
+		return code_prnone;
+	}
+
+	sizea=cur->size+sizeof(struct memCB);
+	sizeb=tar->size+sizeof(struct memCB);
+
+	if((prsub(tar,cur)==sizea)||(prsub(cur,tar)==sizeb))
+	{
+		printf("--can merge\n");
+		printf("a=%p sizea=%d b=%p sizeb=%d  diff=%d \n",cur,cur->size,tar,tar->size,prsub(tar,cur));
+		return code_ok;;
+	}
+
+	return code_err;
+}
+
+/***********************************************
+ *fun     :进行内存合并,合并成功后,返回合并后的block,失败则直接将cur插入到noused链表,并返回NULL
+ *name    :
+ *var     :
+ *return  :
+ ************************************************/
+struct memCB * try_memory_merge(struct memCB *head,struct memCB *tar)
+{
+	struct memCB *cur=NULL,*pre=NULL,*next=NULL;	
+	uint32_t size=0;
+
+	cur=head;
+	pre=NULL;
+	next=getNextNode(cur,pre);
+	//head是不携带信息的,且必定存在,只是用做锚点.后续的节点中才会携带信息.
+	while(next!=NULL)
+	{
+		pre=cur;
+		cur=next;
+		next=getNextNode(cur,pre);
+
+		if(check_block_consecutive(cur,tar)==code_ok)
+		{
+			//将cur从链表中删除,然后再和tar合并.再将合并后的block返回.暂时不做插入处理.	
+			printf("merg pre=%p cur=%p next=%p\n",pre,cur,next);
+
+			pre->xor=(void*)prxor(pre->xor,cur);
+			pre->xor=(void*)prxor(pre->xor,next);
+
+			if(next!=NULL)
+			{
+				next->xor=(void*)prxor(next->xor,cur);
+				next->xor=(void*)prxor(next->xor,pre);
+			}
+			
+
+			if((uint32_t)cur<(uint32_t)tar)
+			{
+				cur->size=cur->size+tar->size+sizeof(struct memCB);
+				return cur;
+			}
+			else
+			{
+				tar->size=cur->size+tar->size+sizeof(struct memCB);
+				return tar;
+			}
+
+
+		}
+
+
+	}
+
+
+	return NULL;
+}
+
+
+/***********************************************
  *fun     :将内存块释放回去.并挂载noused上,挂载后需要保证内存块按照大小,从小到大进行排序.
  *name    :
  *var     :
@@ -193,6 +281,7 @@ fun_glo os_malloc(uint32_t size)
 fun_prv uint32_t __os_free(struct memCB *prmem)
 {
 	struct memCB *cur=NULL,*pre=NULL,*next=NULL;	
+
 	uint32_t size=0;
 	
 	if(prmem==NULL)
@@ -200,6 +289,15 @@ fun_prv uint32_t __os_free(struct memCB *prmem)
 		return code_prnone;
 	}
 
+	do
+	{
+		cur=try_memory_merge(pr_header_noused,prmem);
+		if(cur!=NULL)
+		{
+			prmem=cur;
+			printf("--merge=%p size=%d\n",prmem,prmem->size);
+		}
+	}while(cur!=NULL);
 
 	cur=pr_header_noused;
 	pre=NULL;
@@ -230,14 +328,6 @@ fun_prv uint32_t __os_free(struct memCB *prmem)
 			printf("inser---cur=%p pre=%p next=%p\n",cur,pre,next);
 			printf("inser--xor=%p\n",prmem->xor);
 			printf("inser--pre.xor=%p\n",pre->xor);
-
-			#if 0
-			if(next!=NULL)
-			{
-				next->xor=(void*)prxor(next->xor,cur);
-				next->xor=(void*)prxor(next->xor,prmem);
-			}
-			#endif
 
 			break;
 		}
@@ -274,7 +364,7 @@ void readMemMap(void)
 #define buf_size	1024
 static uint8_t s_buf[buf_size];
 
-void main(void)
+uint32_t main(void)
 {
 	struct memCB *cur=NULL,*pre=NULL,*next=NULL;
 	struct memCB *pr[48];
@@ -284,12 +374,14 @@ void main(void)
 
 
 	st=init_mem(s_buf,buf_size);
+	cur=s_buf;
+	printf("size=%d\n",cur->size);
 	printf("buf st=%x startaddr = %p ,endaddr=%p\n",st,s_buf,s_buf+buf_size);
 
 
 	readMemMap();
 
-	for(i=1;i<4;i++)
+	for(i=1;i<24;i++)
 	{
 		printf("\n-------i=%d--------------\n",i);
 		pr[i]=__os_malloc(i);
@@ -299,11 +391,12 @@ void main(void)
 	}
 
 
+
 	printf("\n\n----------free----------------\n\n");
-	for(i=1;i<4;i++)
+	for(i=1;i<24;i++)
 	{
 		printf("\n-------free i=%d--------------\n",i);
-		printf("free %p size=%x\n",pr[i],pr[i]->size);
+		printf("free %p size=%d\n",pr[i],pr[i]->size);
 		__os_free(pr[i]);
 		readMemMap();
 		printf("\n~~~~~~~~~~~~~~~~~~~~~\n");
@@ -318,6 +411,8 @@ void main(void)
 
 
 	printf("\n========================\n");
+	
+	return 0;
 }
 
 
